@@ -1041,6 +1041,130 @@ describe('CronExpressionParser', () => {
       });
   });
 
+  test('should union dayOfMonth with nth occurrence of dayOfWeek when dayOfMonth is outside the nth week', () => {
+    const options = {
+      currentDate: new CronDate('2024-01-01T00:00:00.000Z'),
+      tz: 'UTC',
+    };
+
+    // 8th of every month unioned with every third Friday
+    const expectedDates = [
+      new CronDate('2024-01-08T00:00:00.000Z'),
+      new CronDate('2024-01-19T00:00:00.000Z'),
+      new CronDate('2024-02-08T00:00:00.000Z'),
+      new CronDate('2024-02-16T00:00:00.000Z'),
+      new CronDate('2024-03-08T00:00:00.000Z'),
+      new CronDate('2024-03-15T00:00:00.000Z'),
+      new CronDate('2024-04-08T00:00:00.000Z'),
+      new CronDate('2024-04-19T00:00:00.000Z'),
+    ];
+
+    const interval = CronExpressionParser.parse('0 0 0 8 * 5#3', options);
+    for (const expectedDate of expectedDates) {
+      const next = interval.next();
+      expect(next.toISOString()).toEqual(expectedDate.toISOString());
+    }
+    expectedDates
+      .slice(0, expectedDates.length - 1)
+      .reverse()
+      .forEach((expected) => {
+        const prev = interval.prev();
+        expect(prev.toISOString()).toEqual(expected.toISOString());
+      });
+  });
+
+  test('should union dayOfMonth with nth occurrence of dayOfWeek when iterating from a mid-month date', () => {
+    const options = {
+      currentDate: new CronDate('2024-01-10T00:00:00.000Z'),
+      tz: 'UTC',
+    };
+
+    const expectedNextDates = [
+      new CronDate('2024-01-19T00:00:00.000Z'),
+      new CronDate('2024-02-08T00:00:00.000Z'),
+      new CronDate('2024-02-16T00:00:00.000Z'),
+    ];
+    const expectedPrevDates = [
+      new CronDate('2024-01-08T00:00:00.000Z'),
+      new CronDate('2023-12-15T00:00:00.000Z'),
+      new CronDate('2023-12-08T00:00:00.000Z'),
+    ];
+
+    const interval = CronExpressionParser.parse('0 0 0 8 * 5#3', options);
+    for (const expectedDate of expectedNextDates) {
+      expect(interval.next().toISOString()).toEqual(expectedDate.toISOString());
+    }
+
+    interval.reset(new CronDate('2024-01-10T00:00:00.000Z'));
+    for (const expectedDate of expectedPrevDates) {
+      expect(interval.prev().toISOString()).toEqual(expectedDate.toISOString());
+    }
+  });
+
+  test('take should union dayOfMonth with nth occurrence of dayOfWeek in both directions', () => {
+    const expression = '0 0 0 8 * 5#3';
+    const expectedForward = [
+      '2024-01-08T00:00:00.000Z',
+      '2024-01-19T00:00:00.000Z',
+      '2024-02-08T00:00:00.000Z',
+      '2024-02-16T00:00:00.000Z',
+    ];
+    const expectedBackward = [
+      '2024-01-19T00:00:00.000Z',
+      '2024-01-08T00:00:00.000Z',
+      '2023-12-15T00:00:00.000Z',
+      '2023-12-08T00:00:00.000Z',
+    ];
+
+    const forward = CronExpressionParser.parse(expression, {
+      currentDate: new CronDate('2024-01-01T00:00:00.000Z'),
+      tz: 'UTC',
+    });
+    expect(forward.take(expectedForward.length).map((date) => date.toISOString())).toEqual(expectedForward);
+
+    const backward = CronExpressionParser.parse(expression, {
+      currentDate: new CronDate('2024-02-01T00:00:00.000Z'),
+      tz: 'UTC',
+    });
+    expect(backward.take(-expectedBackward.length).map((date) => date.toISOString())).toEqual(expectedBackward);
+  });
+
+  test('includesDate should union dayOfMonth with nth occurrence of dayOfWeek', () => {
+    const interval = CronExpressionParser.parse('0 0 0 8 * 5#3', { tz: 'UTC' });
+
+    // 8th of the month matches via dayOfMonth even though it is not the third Friday
+    expect(interval.includesDate(new CronDate('2024-01-08T00:00:00.000Z'))).toBe(true);
+    // third Friday matches via dayOfWeek
+    expect(interval.includesDate(new CronDate('2024-01-19T00:00:00.000Z'))).toBe(true);
+    // other Fridays and other days of the month do not match
+    expect(interval.includesDate(new CronDate('2024-01-05T00:00:00.000Z'))).toBe(false);
+    expect(interval.includesDate(new CronDate('2024-01-12T00:00:00.000Z'))).toBe(false);
+    expect(interval.includesDate(new CronDate('2024-01-09T00:00:00.000Z'))).toBe(false);
+    // wrong time of day does not match
+    expect(interval.includesDate(new CronDate('2024-01-08T01:00:00.000Z'))).toBe(false);
+  });
+
+  test('should not include dayOfMonth when it is a wildcard and dayOfWeek uses nth occurrence', () => {
+    const options = {
+      currentDate: new CronDate('2024-01-01T00:00:00.000Z'),
+      tz: 'UTC',
+    };
+
+    const expectedDates = [
+      new CronDate('2024-01-19T00:00:00.000Z'),
+      new CronDate('2024-02-16T00:00:00.000Z'),
+      new CronDate('2024-03-15T00:00:00.000Z'),
+      new CronDate('2024-04-19T00:00:00.000Z'),
+    ];
+
+    const interval = CronExpressionParser.parse('0 0 0 * * 5#3', options);
+    for (const expectedDate of expectedDates) {
+      expect(interval.next().toISOString()).toEqual(expectedDate.toISOString());
+    }
+    expect(interval.includesDate(new CronDate('2024-01-19T00:00:00.000Z'))).toBe(true);
+    expect(interval.includesDate(new CronDate('2024-01-08T00:00:00.000Z'))).toBe(false);
+  });
+
   test('should correctly determine if a given expression includes a CronDate (#153 and #299)', () => {
     const expression = '* * 1-6 ? * *'; // 1am to 6am every day
     const goodDate = new CronDate('2019-01-01T01:00:00.000');

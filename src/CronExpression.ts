@@ -343,18 +343,13 @@ export class CronExpression {
       return false;
     }
 
-    // Check day of month and day of week using the same logic as #findSchedule
+    // Check day of month and day of week using the same logic as #findSchedule.
+    // The nth day of week constraint (`#`) is enforced inside #matchDayOfMonth as part of
+    // the day of week match, so it does not filter out days matched via day of month.
     if (!this.#matchDayOfMonth(dt)) {
       return false;
     }
 
-    // Check nth day of week if specified
-    if (this.#fields.dayOfWeek.nthDay > 0) {
-      const weekInMonth = Math.ceil(dt.getDate() / 7);
-      if (weekInMonth !== this.#fields.dayOfWeek.nthDay) {
-        return false;
-      }
-    }
     return true;
   }
 
@@ -376,6 +371,9 @@ export class CronExpression {
    * Rule 3: If "day of month" is a wildcard, "day of week" is not a wildcard, and "day of week" matches the current day, then the match is accepted.
    * If none of the rules match, the match is rejected.
    *
+   * The nth day of week constraint (the `#` character) is part of the "day of week" match only,
+   * so a restricted "day of month" still matches on its own when both fields are restricted (Rule 1).
+   *
    * @param {CronDate} currentDate - The current date to be evaluated against the cron expression.
    * @returns {boolean} Returns true if the current date matches the cron expression's day of month and day of week fields, otherwise false.
    * @memberof CronExpression
@@ -392,10 +390,12 @@ export class CronExpression {
     const matchedDOM =
       CronExpression.#matchSchedule(currentDate.getDate(), this.#fields.dayOfMonth.values) ||
       (this.#fields.dayOfMonth.hasLastChar && currentDate.isLastDayOfMonth());
+    const nthDayOfWeek = this.#fields.dayOfWeek.nthDay;
     const matchedDOW =
-      CronExpression.#matchSchedule(currentDate.getDay(), this.#fields.dayOfWeek.values) ||
-      (this.#fields.dayOfWeek.hasLastChar &&
-        CronExpression.#isLastWeekdayOfMonthMatch(this.#fields.dayOfWeek.values, currentDate));
+      (CronExpression.#matchSchedule(currentDate.getDay(), this.#fields.dayOfWeek.values) ||
+        (this.#fields.dayOfWeek.hasLastChar &&
+          CronExpression.#isLastWeekdayOfMonthMatch(this.#fields.dayOfWeek.values, currentDate))) &&
+      (nthDayOfWeek <= 0 || Math.ceil(currentDate.getDate() / 7) === nthDayOfWeek);
 
     // Rule 1: Both "day of month" and "day of week" are restricted; one or both must match the current day.
     if (isRestrictedDayOfMonth && isRestrictedDayOfWeek && (matchedDOM || matchedDOW)) {
@@ -522,12 +522,6 @@ export class CronExpression {
       this.#validateTimeSpan(currentDate);
 
       if (!this.#matchDayOfMonth(currentDate)) {
-        currentDate.applyDateOperation(dateMathVerb, TimeUnit.Day, this.#fields.hour.values.length);
-        continue;
-      }
-      if (
-        !(this.#fields.dayOfWeek.nthDay <= 0 || Math.ceil(currentDate.getDate() / 7) === this.#fields.dayOfWeek.nthDay)
-      ) {
         currentDate.applyDateOperation(dateMathVerb, TimeUnit.Day, this.#fields.hour.values.length);
         continue;
       }
