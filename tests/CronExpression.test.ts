@@ -577,5 +577,28 @@ describe('CronExpression', () => {
       expect(cronExpression.includesDate(new Date('2023-01-16T00:00:00Z'))).toBeTruthy();
       expect(cronExpression.includesDate(new Date('2023-01-23T00:00:00Z'))).toBeFalsy();
     });
+
+    test('should take the union of dayOfMonth and nth dayOfWeek when both are restricted', () => {
+      // 8th of every month AND the 3rd Friday of every month (union, cron standard behavior)
+      const cronExpression = CronExpressionParser.parse('0 0 0 8 * 5#3', {
+        currentDate: new Date('2024-01-01T00:00:00Z'),
+        tz: 'UTC',
+      });
+
+      // The 8th matches via the dayOfMonth branch regardless of weekday/week-in-month
+      expect(cronExpression.includesDate(new Date('2024-01-08T00:00:00Z'))).toBeTruthy();
+      expect(cronExpression.includesDate(new Date('2024-02-08T00:00:00Z'))).toBeTruthy();
+      expect(cronExpression.includesDate(new Date('2024-03-08T00:00:00Z'))).toBeTruthy();
+
+      // The 3rd Friday matches via the dayOfWeek branch
+      expect(cronExpression.includesDate(new Date('2024-01-19T00:00:00Z'))).toBeTruthy();
+      expect(cronExpression.includesDate(new Date('2024-02-16T00:00:00Z'))).toBeTruthy();
+
+      // Anything else does not match
+      expect(cronExpression.includesDate(new Date('2024-01-09T00:00:00Z'))).toBeFalsy();
+      expect(cronExpression.includesDate(new Date('2024-01-12T00:00:00Z'))).toBeFalsy();
+      expect(cronExpression.includesDate(new Date('2024-01-26T00:00:00Z'))).toBeFalsy();
+      expect(cronExpression.includesDate(new Date('2024-01-31T00:00:00Z'))).toBeFalsy();
+    });
   });
 });

@@ -347,14 +347,6 @@ export class CronExpression {
     if (!this.#matchDayOfMonth(dt)) {
       return false;
     }
-
-    // Check nth day of week if specified
-    if (this.#fields.dayOfWeek.nthDay > 0) {
-      const weekInMonth = Math.ceil(dt.getDate() / 7);
-      if (weekInMonth !== this.#fields.dayOfWeek.nthDay) {
-        return false;
-      }
-    }
     return true;
   }
 
@@ -392,10 +384,16 @@ export class CronExpression {
     const matchedDOM =
       CronExpression.#matchSchedule(currentDate.getDate(), this.#fields.dayOfMonth.values) ||
       (this.#fields.dayOfMonth.hasLastChar && currentDate.isLastDayOfMonth());
+    // The "#n" qualifier restricts the day-of-week branch only: the weekday has to fall in the
+    // nth week of the month. It must not constrain a day-of-month match, because both fields
+    // being restricted is a union (e.g. "8 * 5#3" fires on the 8th and on the 3rd Friday).
+    const matchedNthDayOfWeek =
+      this.#fields.dayOfWeek.nthDay <= 0 || Math.ceil(currentDate.getDate() / 7) === this.#fields.dayOfWeek.nthDay;
     const matchedDOW =
-      CronExpression.#matchSchedule(currentDate.getDay(), this.#fields.dayOfWeek.values) ||
-      (this.#fields.dayOfWeek.hasLastChar &&
-        CronExpression.#isLastWeekdayOfMonthMatch(this.#fields.dayOfWeek.values, currentDate));
+      matchedNthDayOfWeek &&
+      (CronExpression.#matchSchedule(currentDate.getDay(), this.#fields.dayOfWeek.values) ||
+        (this.#fields.dayOfWeek.hasLastChar &&
+          CronExpression.#isLastWeekdayOfMonthMatch(this.#fields.dayOfWeek.values, currentDate)));
 
     // Rule 1: Both "day of month" and "day of week" are restricted; one or both must match the current day.
     if (isRestrictedDayOfMonth && isRestrictedDayOfWeek && (matchedDOM || matchedDOW)) {
@@ -522,12 +520,6 @@ export class CronExpression {
       this.#validateTimeSpan(currentDate);
 
       if (!this.#matchDayOfMonth(currentDate)) {
-        currentDate.applyDateOperation(dateMathVerb, TimeUnit.Day, this.#fields.hour.values.length);
-        continue;
-      }
-      if (
-        !(this.#fields.dayOfWeek.nthDay <= 0 || Math.ceil(currentDate.getDate() / 7) === this.#fields.dayOfWeek.nthDay)
-      ) {
         currentDate.applyDateOperation(dateMathVerb, TimeUnit.Day, this.#fields.hour.values.length);
         continue;
       }
